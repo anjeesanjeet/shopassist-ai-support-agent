@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShopAssist: flowcharts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,650;12..96,750&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/theme.css">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+  <style>
+    .page { max-width: 1400px; margin: 0 auto; padding: 26px 28px 60px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0 18px; }
+    .controls select, .controls input { font: inherit; padding: 7px 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+    .canvas { background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: 28px; overflow-x: auto; }
+    .canvas svg { max-width: 100%; height: auto; }
+    body.export { background: #fff; }
+    body.export .topbar, body.export .chrome { display: none; }
+    body.export .page { padding: 40px; max-width: none; }
+    body.export .canvas { border: 0; padding: 0; }
+    .export-title { display: none; font-family: var(--font-display); font-size: 34px; color: var(--indigo); margin-bottom: 24px; }
+    body.export .export-title { display: block; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><strong>ShopAssist</strong><span class="muted">Automated flowcharts</span></div>
+    <nav class="nav">
+      <a href="/chat">Chat</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/flowchart" aria-current="page">Flowcharts</a>
+    </nav>
+  </header>
+  <main class="page">
+    <div class="chrome">
+      <h1>How the agent works</h1>
+      <p class="muted">Generated from the code (tool registry and guardrails) and from real conversation logs. Nothing here is drawn by hand.</p>
+      <div class="controls">
+        <label for="view">Diagram</label>
+        <select id="view">
+          <option value="architecture">System architecture</option>
+          <option value="decision">Agent decision flow</option>
+          <option value="trace">Conversation trace</option>
+        </select>
+        <input id="cid" placeholder="Conversation id (blank = latest)" size="30" hidden>
+        <button id="draw" type="button">Draw</button>
+        <button id="dl" type="button" class="ghost">Download SVG</button>
+      </div>
+    </div>
+    <div class="export-title" id="exportTitle"></div>
+    <div class="canvas" id="canvas"></div>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const TITLES = { architecture: "ShopAssist: system architecture", decision: "ShopAssist: agent decision flow", trace: "ShopAssist: conversation trace" };
+    if (params.get("export") === "1") document.body.classList.add("export");
+    mermaid.initialize({
+      startOnLoad: false, theme: "base", securityLevel: "loose",
+      themeVariables: { fontFamily: "Manrope, Segoe UI, sans-serif", fontSize: "15px", lineColor: "#5B6B7B",
+                        primaryColor: "#E6EEF4", primaryTextColor: "#13263A", primaryBorderColor: "#1D3D5C" },
+      flowchart: { curve: "basis", htmlLabels: true },
+    });
+    const view = document.getElementById("view"), cid = document.getElementById("cid"), canvas = document.getElementById("canvas");
+    view.value = params.get("view") || "architecture";
+    cid.value = params.get("id") || "";
+    const syncInputs = () => { cid.hidden = view.value !== "trace"; };
+    view.addEventListener("change", () => { syncInputs(); draw(); });
+    document.getElementById("draw").addEventListener("click", draw);
+    document.getElementById("dl").addEventListener("click", () => {
+      const svg = canvas.querySelector("svg");
+      if (!svg) return;
+      const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `shopassist-${view.value}.svg` });
+      a.click();
+    });
+    async function draw() {
+      window.__ready = false;
+      canvas.innerHTML = '<p class="muted">Drawing…</p>';
+      document.getElementById("exportTitle").textContent = TITLES[view.value];
+      try {
+        const q = new URLSearchParams({ view: view.value });
+        if (view.value === "trace" && cid.value.trim()) q.set("conversation_id", cid.value.trim());
+        const data = await (await fetch("/api/flowchart?" + q)).json();
+        if (!data.mermaid) { canvas.innerHTML = '<p class="muted">No conversation found. Send a message in the chat first.</p>'; return; }
+        const { svg } = await mermaid.render("g" + Date.now(), data.mermaid);
+        canvas.innerHTML = svg;
+      } catch (e) {
+        canvas.innerHTML = `<p class="chip bad">Could not draw the diagram: ${e.message || e}</p>`;
+      } finally {
+        await document.fonts?.ready;
+        window.__ready = true;
+      }
+    }
+    syncInputs();
+    draw();
+  </script>
+</body>
+</html>

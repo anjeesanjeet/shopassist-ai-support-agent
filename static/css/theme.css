@@ -1,0 +1,74 @@
+/* Shared design system for every portfolio project (same tokens = consistent Contra thumbnails). */
+:root {
+  --porcelain: #F4F6F8;
+  --paper: #FFFFFF;
+  --ink: #13263A;
+  --indigo: #1D3D5C;
+  --slate: #5B6B7B;
+  --mist: #E6EEF4;
+  --rule: #D5DEE6;
+  --saffron: #C98A12;
+  --saffron-soft: #FDF1DC;
+  --leaf: #2E7D5B;
+  --leaf-soft: #E3F1EA;
+  --brick: #B5452F;
+  --brick-soft: #FBE3DD;
+
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-text: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --radius-lg: 14px;
+  --radius-sm: 6px;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--porcelain);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { font-family: var(--font-display); font-weight: 650; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 30px; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; }
+p { margin: 0; }
+a { color: var(--indigo); }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--slate); }
+:focus-visible { outline: 2px solid var(--saffron); outline-offset: 2px; }
+
+button {
+  font: inherit; cursor: pointer; border-radius: var(--radius-sm);
+  border: 1px solid var(--indigo); background: var(--indigo); color: #fff;
+  padding: 8px 14px; font-weight: 600;
+}
+button.ghost { background: transparent; color: var(--indigo); border-color: var(--rule); }
+button:disabled { opacity: .5; cursor: progress; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 28px; background: var(--paper); border-bottom: 1px solid var(--rule);
+}
+.brand { display: flex; align-items: baseline; gap: 12px; }
+.brand strong { font-family: var(--font-display); font-size: 20px; color: var(--indigo); }
+.nav { display: flex; gap: 6px; }
+.nav a {
+  text-decoration: none; padding: 6px 12px; border-radius: var(--radius-sm); color: var(--slate); font-weight: 600;
+}
+.nav a[aria-current="page"] { background: var(--mist); color: var(--indigo); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;
+  padding: 2px 9px; border-radius: 999px; background: var(--mist); color: var(--indigo); white-space: nowrap;
+}
+.chip.ok { background: var(--leaf-soft); color: var(--leaf); }
+.chip.bad { background: var(--brick-soft); color: var(--brick); }
+.chip.warn { background: var(--saffron-soft); color: #7A5206; }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
