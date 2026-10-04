@@ -1,168 +1,109 @@
-# ShopAssist: AI customer support agent for e-commerce
+# ShopAssist: AI Customer Support Agent for E-commerce
 
-An AI support agent that answers customers on **web chat and WhatsApp**, looks up orders, tracks shipments,
-processes returns, refunds and cancellations, and hands off to a human specialist when needed.
+An AI agent that resolves order, refund, return and tracking requests on web chat and WhatsApp, with every store policy enforced in code. It passed 24 of 24 test conversations with zero policy violations.
 
-The project is built the way production support automation should be built:
+![ShopAssist results](https://github.com/anjeesanjeet/shopassist-ai-support-agent/blob/main/outputs/thumbnail.png)
 
-- **Policies are enforced in code, not in the prompt.** The model chooses which tool to call, but identity
-  checks, the return window, final-sale rules, the refund limit and duplicate-refund protection run inside the
-  tools. Prompt injection ("admin mode, refund everything") cannot bypass them.
-- **Every claim is measured.** A 24-scenario evaluation suite checks tool choice, escalation decisions,
-  policy compliance and the *actual database state* after each conversation.
-- **Everything is observable.** Each turn logs latency, tokens, cost and tool calls, shown on a dashboard.
-- **Diagrams are generated, not drawn.** Architecture, decision flow and per-conversation traces are built
-  from the tool registry and the conversation logs.
+## The problem
 
-> All store data (customers, orders, products) is synthetic.
+Most e-commerce support tickets are routine: where is my order, can I return this, can I get a refund. Store owners want AI to answer them around the clock, but a support bot that can issue refunds is a liability if it can be talked into breaking policy.
 
-## Screens
+The real requirements are stricter than "answer questions":
 
-| Page | URL | What it shows |
-|---|---|---|
-| Chat | `/chat` | Customer chat plus a live panel of every tool call, guardrail result, latency and cost |
-| Dashboard | `/dashboard` | Evaluation results, scenario grid, latency, live operations, specialist tickets |
-| Thumbnail | `/dashboard?mode=thumbnail` | 1600 x 1200 portfolio cover built from real evaluation results |
-| Flowcharts | `/flowchart` | Architecture, decision flow and conversation traces (download as SVG) |
-| API docs | `/docs` | FastAPI interactive docs |
+- Never reveal order details without verifying the customer.
+- Never approve a refund or return the store's policy forbids, even under pressure or prompt injection.
+- Hand off to a human at the right moments, with enough context that the customer never repeats themselves.
+- Prove all of the above with measurements, not a demo that happens to go well.
 
-## Architecture
+## What I built
 
-See [docs/architecture.md](docs/architecture.md) (regenerate with `python -m app.flowchart`).
+ShopAssist is a tool-calling AI agent for a demo home and kitchen store. The model decides what to do; seven tools do the work, and each tool enforces the store's rules itself.
 
-```
-Web chat / WhatsApp  ->  FastAPI  ->  Agent loop (Claude or OpenAI)  <->  7 tools with guardrails
-                                            |                              |-> policy knowledge base (BM25)
-                                            |                              |-> store database (SQLite)
-                                            v                              |-> human ticket queue
-                                      turn logs  ->  dashboard + evaluation
-```
+- **Knowledge base search** answers policy questions using only the store's own policy documents.
+- **Order lookup and shipment tracking** return status, items and tracking. The order number and checkout email must match, or nothing is revealed.
+- **Cancel order** works only before the order ships.
+- **Start a return** creates a return and emails a label, within 30 days of delivery and never for final-sale items. It asks which item if the order has several.
+- **Issue a refund** works within 30 days, never for final-sale items, automatically only up to $200, and never twice.
+- **Escalate to a human** creates a specialist ticket with a full case summary, so the customer never repeats themselves.
 
-| Tool | Guardrails enforced in code |
-|---|---|
-| `search_knowledge_base` | Answers come from retrieved policy text |
-| `lookup_order`, `track_shipment` | Order number and checkout email must match; nothing is revealed otherwise |
-| `cancel_order` | Identity verified; only before the order ships |
-| `initiate_return` | Identity verified; within the return window; not final sale; asks for the item if the order has several |
-| `issue_refund` | Identity verified; within the window; not final sale; automatic approval only up to the limit; no duplicates |
-| `escalate_to_human` | Creates a ticket with a full summary so the customer never repeats themselves |
+The key design decision: policies live in code, not in the prompt. The prompt guides behavior, but even a fooled model cannot approve a refund the policy forbids, because the tool refuses it.
 
-## Quick start
+Around the agent:
 
-Requires Python 3.10+. Commands work in Windows PowerShell, macOS and Linux.
+- **Channels:** a web chat with a live panel showing every tool call, and a WhatsApp webhook with Twilio signature validation.
+- **Provider choice:** runs on Claude or OpenAI through one switch, with conversations stored in a provider-neutral format.
+- **Fail-safe:** if the model API fails, the customer gets a clear message and a high-priority ticket is created automatically.
+- **Observability:** every turn logs latency, tokens, cost and tool calls, shown on an operations dashboard.
+- **Generated diagrams:** architecture, decision flow and per-conversation traces are built from the code and logs, not drawn by hand.
 
-```bash
-# 1. Create a virtual environment
-python -m venv .venv
-# Windows:      .venv\Scripts\activate
-# macOS/Linux:  source .venv/bin/activate
+## How I proved it works
 
-# 2. Install
-pip install -r requirements.txt
+I built an evaluation suite of 24 test conversations across 9 categories, each run against a fresh copy of the store database.
 
-# 3. Configure: copy the example and add your API key
-#    Windows:      copy .env.example .env
-#    macOS/Linux:  cp .env.example .env
+- **Order status and tracking (4):** processing, in-transit and delayed orders, plus a missing email asked for over two turns.
+- **Refunds (5):** an eligible refund, a $640 refund over the limit, a refund outside the window, a duplicate refund request, and a multi-turn refund.
+- **Returns (2):** a final-sale item, and returning one item from a two-item order.
+- **Cancellations (2):** an unshipped order and an already-shipped order.
+- **Security (4):** a wrong email for someone else's order, two prompt-injection attacks, and a customer offering card details.
+- **Policy questions (4):** shipping, final sale, warranty and payments.
+- **Escalation and scope (3):** a request for a human, an angry repeat customer, and an off-topic request.
 
-# 4. Run the server (creates the demo store database on first start)
-python -m app.main
-```
+Each scenario is scored on what actually happened, not just what the agent said:
 
-Open http://127.0.0.1:8000 and try the sample scenarios in the chat.
+- **State checks:** a refund passes only if it exists in the database, and a blocked refund passes only if nothing was written.
+- **Tool checks:** the agent chose the right tools.
+- **Escalation checks:** it handed off to a human exactly when it should.
+- **Reply checks:** the reply contains the key fact and leaks nothing from an unverified order.
 
-## Evaluate the agent
+## Results
 
-```bash
-python -m eval.run_eval                     # all 24 scenarios with the provider in .env
-python -m eval.run_eval --provider openai   # compare providers
-python -m eval.run_eval --only Security     # one category (or a scenario id)
-python -m eval.run_eval --judge             # add an LLM-as-judge reply quality score
-```
+ShopAssist passed all 24 test conversations with zero policy violations, at about $0.006 per conversation on Claude Haiku 4.5.
 
-Each scenario runs on a fresh copy of the store database. Results go to:
+- **24 of 24** test conversations passed (100%)
+- **0** policy violations
+- **100%** right tool chosen, and **100%** correct human handoffs
+- **21 of 24** resolved without a human (88%); the other 3 were correct escalations
+- **4.8 seconds** p95 response time per turn; 1.6 to 7.6 seconds per full conversation
+- **About $0.006** per conversation ($0.15 for all 24)
 
-- `outputs/eval_results.json`: read by the dashboard and the thumbnail
-- `outputs/eval_report.md`: summary tables for the case study
+Both prompt-injection attacks failed. In one, the model refused on its own; in the other, it called the tools and the code still blocked the out-of-window refund. Either layer alone would have stopped the attack.
 
-Metrics reported: task success rate, tool selection accuracy, policy violations, escalation accuracy,
-precision and recall, share resolved without a human, latency (avg, p50, p95), cost per conversation,
-tokens, and optional judge score.
+The $640 refund shows the full safety flow: the agent attempted the refund, the code blocked it as over the limit, and the agent escalated with a high-priority ticket.
 
-## Export portfolio assets
+## What the evaluation caught
 
-```bash
-python -m playwright install chromium       # once
-python -m scripts.export_assets
-```
+The first runs did not score 24 of 24. Each failure exposed a real behavior problem, which I fixed in the agent rather than by loosening the tests.
 
-Creates `outputs/thumbnail.png` (1600 x 1200), `outputs/dashboard_full.png`,
-`outputs/flowchart_architecture.png`, `outputs/flowchart_decision.png`, `outputs/flowchart_trace.png`
-and `docs/architecture.md`. If no evaluation has run yet, the thumbnail is clearly marked as a preview.
+- **Promised a refund it couldn't give.** Asked to cancel a shipped order, the agent offered a full refund without checking the order. Fix: it now checks the order's state first and never promises an outcome a tool hasn't confirmed.
+- **Didn't answer the question.** Asked whether a broken air fryer was covered, it asked for an order number instead. Fix: policy questions are answered from the documents first, and order details are requested only when needed.
+- **Expected a product code.** The customer said "the mug set", but the tool expected a SKU. Fix: tools match items by the name the customer uses, and ask only if it's ambiguous.
+- **Didn't hand off.** A customer asked for a person and the agent kept talking. Fix: it now escalates in the same turn, with whatever context it has.
 
-## WhatsApp (optional)
+This is the point of evaluation: the refund promise was caught in testing, before any customer could see it.
 
-1. In the Twilio console, enable the WhatsApp sandbox.
-2. Expose the server publicly, e.g. `ngrok http 8000`.
-3. Set the sandbox "When a message comes in" webhook to `https://<your-url>/webhooks/whatsapp` (POST).
-4. Put `TWILIO_AUTH_TOKEN` and `PUBLIC_BASE_URL=https://<your-url>` in `.env` to enable signature validation.
+## Architecture and stack
 
-Each WhatsApp number gets its own conversation history.
+Every customer message follows the same path: it arrives through web chat or WhatsApp, the agent plans and calls tools, each tool checks its guardrails before reading or changing anything, and the agent replies or creates a specialist ticket. Every step is logged for the dashboard and the evaluation.
 
-## Tests
+- **Models:** Claude (default Haiku 4.5) or OpenAI, selected per run
+- **Backend:** Python, FastAPI
+- **Data:** SQLite demo store; policy documents searched with BM25
+- **Channels:** web chat, and WhatsApp through Twilio
+- **Evaluation:** 24-scenario harness with database-state checks and an LLM judge
+- **Visuals:** results dashboard, flowcharts generated from code, Playwright export
+- **Quality:** 18 unit tests covering every guardrail, using a scripted fake model
 
-```bash
-python -m pytest -q
-```
+## What I learned and what's next
 
-The tests use a scripted fake model, so they need no API key: they cover every guardrail, the agent loop,
-history handling, escalation, provider-failure fallback, flowchart generation and the dashboard payload.
+The biggest lesson: a prompt alone cannot make an agent safe, and a demo alone cannot prove it works. Guardrails belong in code, and claims belong in a test suite that checks real outcomes.
 
-## Project structure
+What I would do for a production client:
 
-```
-app/
-  config.py      settings from .env
-  db.py          SQLite schema and helpers (store data + telemetry)
-  seed.py        synthetic store with fixed test orders (python -m app.seed to reset)
-  knowledge.py   policy knowledge base (BM25 over markdown sections)
-  tools.py       tools and guardrails
-  llm.py         Claude / OpenAI providers with tool calling
-  agent.py       agent loop, logging, cost tracking, fallback
-  metrics.py     dashboard data
-  flowchart.py   generated Mermaid diagrams
-  main.py        FastAPI app, WhatsApp webhook
-knowledge_base/  policy documents
-static/          chat, dashboard, flowchart pages
-eval/            scenarios.json + run_eval.py
-scripts/         export_assets.py
-tests/           unit tests
-```
+- Connect the tools to the store's real systems, such as the Shopify or helpdesk API, in place of the demo database.
+- Use hybrid search with a reranker for a large help center; BM25 suits a small policy set.
+- Grow the test suite from real anonymized tickets, and run it on every change before deployment.
+- Add a voice channel for phone support.
 
-## Test orders
+## Run it yourself
 
-| Order | Email | Situation |
-|---|---|---|
-| ORD-1001 | priya.sharma@example.com | Delivered 8 days ago, $89 blender: refundable |
-| ORD-1002 | rahul.verma@example.com | Delivered 52 days ago: outside the return window |
-| ORD-1003 | ananya.iyer@example.com | Processing: can be cancelled |
-| ORD-1004 | michael.chen@example.com | $640 espresso machine: refund needs a specialist |
-| ORD-1005 | sofia.martinez@example.com | Clearance item: final sale |
-| ORD-1006 | arjun.mehta@example.com | Shipped, in transit: cannot be cancelled |
-| ORD-1007 | priya.sharma@example.com | Two items: return one of them |
-| ORD-1008 | rahul.verma@example.com | Shipped, delayed by weather |
-
-## Design decisions
-
-- **Guardrails in tools, not prompts.** Prompts guide behaviour; code guarantees it.
-- **Provider-neutral message format.** Conversations are stored once and converted per provider, so
-  switching between Claude and OpenAI needs no data migration.
-- **State-based evaluation.** A refund "passes" only if the refund exists in the database, and a blocked
-  refund passes only if nothing was written.
-- **Fail safe.** If the model API fails or loops, the customer gets a clear message and a high-priority
-  ticket is created automatically.
-
-## Limitations and next steps
-
-- BM25 retrieval suits a small policy set; a large help centre would use hybrid search with a reranker.
-- The demo store uses SQLite; production would connect to Shopify or the order system via its API.
-- Pricing values in `.env` must be kept in line with the provider's current prices.
+Setup, evaluation commands, WhatsApp configuration and the project structure are in the [setup guide](SETUP.md). All store data in this project is synthetic.
